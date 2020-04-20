@@ -1,6 +1,7 @@
 require "csv"
 require 'google/apis/civicinfo_v2'
 require 'erb'
+require 'date'
 
 
 
@@ -49,23 +50,40 @@ def save_thank_you_letter(id, form_letter)
     end
 end
 
+def clean_reg_date(reg_date)
+    DateTime.strptime(reg_date, '%m/%d/%Y %H:%M')
+end
+
+
 def get_reg_hour(reg_date)
-    DateTime.strptime(reg_date, '%m/%d/%Y %H:%M').strftime('%H')
+    reg_date.strftime('%H')
 end
 
-def count_reg_hours(reg_hour, hours_hash)
-    tmp = hours_hash[reg_hour]
-    hours_hash[reg_hour] = tmp + 1
-    hours_hash
+def get_reg_day(reg_date)
+    reg_date.wday
 end
 
-def hours_with_most_reg(hours_hash)
-    hours_with_most_reg_array = [] 
-    hours_hash.each { |k,v| hours_with_most_reg_array << k if v == hours_hash.values.max }
-    hours_with_most_reg_array
+def create_hash_with_count(input_key, output_hash)
+    tmp = output_hash[input_key]
+    output_hash[input_key] = tmp + 1
+    output_hash
 end
 
-puts "EventManager Initialized!"
+def most_reg_by(hash)
+    most_reg_array = []
+    hash.each {|key, value| most_reg_array << key if value == hash.values.max}
+    most_reg_array
+end
+
+def day_as_integer_to_name(array)
+    return_array = []
+    array.each_with_index do |value, index|
+        return_array << Date::DAYNAMES[array[index]]
+    end
+
+    return_array
+
+end
 
 contents = CSV.open "event_attendees.csv", headers: true, header_converters: :symbol
 
@@ -74,22 +92,43 @@ erb_template = ERB.new template_letter
 
 
 reg_hour_hash = Hash.new(0)
+reg_day_hash = Hash.new(0)
 
 contents.each do |row|
     id = row[0]
     name = row[:first_name]
     zipcode = clean_zipcode(row[:zipcode])
     phone_number = clean_phone_number(row[:homephone])
-    reg_hour = get_reg_hour(row[:regdate])
-    reg_hour_hash = count_reg_hours(reg_hour, reg_hour_hash)
+
+    # turns row[:reg_date] into a datetime object
+    reg_date = clean_reg_date(row[:regdate])
+
+
+    #returns the hour for each row, so that it can be counted
+    reg_hour = get_reg_hour(reg_date)
+
+    # adds hour to hash if it doesn't exists and increments value based on frequency
+    reg_hour_hash = create_hash_with_count(reg_hour, reg_hour_hash)
+
+    # returns day, adds to hash, increments
+    reg_day = get_reg_day(reg_date)
+    reg_day_hash = create_hash_with_count(reg_day, reg_day_hash)
+
+    
     legislators = legislators_by_zipcode(zipcode)
 
 
-    # puts phone_number
-    # form_letter = erb_template.result(binding)
-    # save_thank_you_letter(id, form_letter)
+    puts phone_number
+    form_letter = erb_template.result(binding)
+    save_thank_you_letter(id, form_letter)
 end
 
 
-# hours_with_most_reg_array = hours_with_most_reg(reg_hour_hash)
-# puts hours_with_most_reg_array
+hours_with_most_reg_array = most_reg_by(reg_hour_hash)
+
+days_with_most_reg_array = most_reg_by(reg_day_hash)
+most_reg_dayname_array = day_as_integer_to_name(days_with_most_reg_array)
+
+
+puts "Hours with the most registrations: #{hours_with_most_reg_array}"
+puts "Days with the most registrations: #{most_reg_dayname_array}"
